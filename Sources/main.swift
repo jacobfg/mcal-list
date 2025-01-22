@@ -13,8 +13,11 @@ Usage:
 Options:
  - <cal-names>: A comma-separated list of calendar names to filter on.
  - [items-to-display]: Optional. Limits the number of events displayed.
- - [--json]: Outputs events in JSON format.
+ - [--json]: Optional. Outputs events in JSON format.
+ - [--now]: Optional. Outputs events from after now (default today).
  - [--max-title-length=<length>]: Optional. Trims event titles in plain text output.
+ - [--no-days=<days>]: Optional. Number of days to display (default 1 - today).
+ - [--start-day=<days>]: Optional. Moves start day x number of days forward or back (default 0 - today).
  - [--condense]: Optional. Condense to one line (ignored for JSON output).
 """
 
@@ -26,9 +29,12 @@ if a.count < 2 {
 // Parse arguments
 let calendarNames = a[1].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
 var itemsToDisplay = -1
+var daysToDisplay = 1
+var startDay = 0
 var outputJSON = false
 var maxTitleLength = Int.max
 var condenseOutput = false
+var fromNow = false
 
 for arg in a.dropFirst(2) {
     if arg == "--json" {
@@ -40,8 +46,24 @@ for arg in a.dropFirst(2) {
             print("Invalid value for --max-title-length")
             exit(1)
         }
+    } else if arg.starts(with: "--no-days=") {
+        if let days = Int(arg.replacingOccurrences(of: "--no-days=", with: "")), days > 0 {
+            daysToDisplay = days
+        } else {
+            print("Invalid value for --no-days")
+            exit(1)
+        }
+    } else if arg.starts(with: "--start-day=") {
+        if let day = Int(arg.replacingOccurrences(of: "--start-day=", with: "")) {
+            startDay = day
+        } else {
+            print("Invalid value for --start-day")
+            exit(1)
+        }
     } else if arg.starts(with: "--condense") {
         condenseOutput = true // ignored for json
+    } else if arg.starts(with: "--now") {
+        fromNow = true
     } else if let n = Int(arg), n >= 0 {
         itemsToDisplay = n
     } else {
@@ -71,9 +93,10 @@ switch EKEventStore.authorizationStatus(for:.event){
 }
 
 let now = Date()
-let startOfToday = Calendar.current.startOfDay(for: now)
-let startOfTomorrow = Calendar.current.date(byAdding: .day, value: 1, to: startOfToday)!
-let endOfTomorrow = Calendar.current.date(byAdding: .day, value: 2, to: startOfToday)!
+let today = Calendar.current.startOfDay(for: now)
+let startOfToday = Calendar.current.date(byAdding: .day, value: startDay, to: today)!
+// let startOfTomorrow = Calendar.current.date(byAdding: .day, value: 1, to: startOfToday)!
+let endOfTomorrow = Calendar.current.date(byAdding: .day, value: daysToDisplay, to: startOfToday)!
 
 let calendars = eventStore.calendars(for: .event).filter { calendarNames.contains($0.title) }
 
@@ -85,23 +108,23 @@ guard !calendars.isEmpty else {
 let eventsTodayAndTomorrow = eventStore.events(
     matching: eventStore.predicateForEvents(withStart: startOfToday, end: endOfTomorrow, calendars: calendars)
 ).filter {
-    !$0.isAllDay && $0.endDate > now && $0.endDate.timeIntervalSince($0.startDate) < 86400
+    !$0.isAllDay && (fromNow ? $0.endDate > now : true) && $0.endDate.timeIntervalSince($0.startDate) < 86400
 }
 
-// Deduplicate events based on UUID
-var seenEventIdentifiers = Set<String>()
+// Deduplicate events based on UUID and start date
+var seenEventInstances = Set<String>()
 let deduplicatedEvents = eventsTodayAndTomorrow.filter { event in
-    guard let identifier = event.eventIdentifier else { return true }
-    if seenEventIdentifiers.contains(identifier) {
+    let instanceKey = "\(event.eventIdentifier ?? "Unknown")|\(event.startDate?.timeIntervalSince1970 ?? 0)"
+    if seenEventInstances.contains(instanceKey) {
         return false
     } else {
-        seenEventIdentifiers.insert(identifier)
+        seenEventInstances.insert(instanceKey)
         return true
     }
 }
 
 // Limit the number of events if specified
-let limitedEvents = itemsToDisplay != -1 ? Array(eventsTodayAndTomorrow.prefix(itemsToDisplay)) : eventsTodayAndTomorrow
+let limitedEvents = itemsToDisplay != -1 ? Array(deduplicatedEvents.prefix(itemsToDisplay)) : deduplicatedEvents
 
 if outputJSON {
     // Convert events to JSON
