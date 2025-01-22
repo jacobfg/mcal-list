@@ -95,7 +95,6 @@ switch EKEventStore.authorizationStatus(for:.event){
 let now = Date()
 let today = Calendar.current.startOfDay(for: now)
 let startOfToday = Calendar.current.date(byAdding: .day, value: startDay, to: today)!
-// let startOfTomorrow = Calendar.current.date(byAdding: .day, value: 1, to: startOfToday)!
 let endOfTomorrow = Calendar.current.date(byAdding: .day, value: daysToDisplay, to: startOfToday)!
 
 let calendars = eventStore.calendars(for: .event).filter { calendarNames.contains($0.title) }
