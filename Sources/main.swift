@@ -88,6 +88,18 @@ let eventsTodayAndTomorrow = eventStore.events(
     !$0.isAllDay && $0.endDate > now && $0.endDate.timeIntervalSince($0.startDate) < 86400
 }
 
+// Deduplicate events based on UUID
+var seenEventIdentifiers = Set<String>()
+let deduplicatedEvents = eventsTodayAndTomorrow.filter { event in
+    guard let identifier = event.eventIdentifier else { return true }
+    if seenEventIdentifiers.contains(identifier) {
+        return false
+    } else {
+        seenEventIdentifiers.insert(identifier)
+        return true
+    }
+}
+
 // Limit the number of events if specified
 let limitedEvents = itemsToDisplay != -1 ? Array(eventsTodayAndTomorrow.prefix(itemsToDisplay)) : eventsTodayAndTomorrow
 
